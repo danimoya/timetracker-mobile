@@ -4,6 +4,10 @@
 
 **Live:** <https://ttm.danielmoya.cv>
 
+<p align="center">
+  <img src="docs/screenshots/tour.webp" alt="TimeTracker product tour" width="320" />
+</p>
+
 ---
 
 TimeTracker is a small full-stack app for logging how you spend your day. It keeps a per-user ledger of sessions and breaks, groups them by customer and project, and renders everything as a chronograph dial + a paper ledger in an editorial "Almanac" aesthetic. Multiple members can share a workspace and keep independent ledgers.
