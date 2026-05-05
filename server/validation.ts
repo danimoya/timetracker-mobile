@@ -44,13 +44,19 @@ export const createTimeEntrySchema = z.object({
   isBreak: z.boolean(),
   customerId: z.number().int().positive().optional().nullable(),
   projectId: z.number().int().positive().optional().nullable(),
+  taskId: z.number().int().positive().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
+  // Optional past-tense entries used by integrations: pass both checkIn
+  // and checkOut to log a completed session retroactively.
+  checkIn: z.string().datetime().optional(),
+  checkOut: z.string().datetime().optional(),
 });
 
 export const updateTimeEntrySchema = z.object({
   checkOut: z.string().datetime().optional(),
   customerId: z.number().int().positive().optional().nullable(),
   projectId: z.number().int().positive().optional().nullable(),
+  taskId: z.number().int().positive().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   isBreak: z.boolean().optional(),
 });

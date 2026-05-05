@@ -4,7 +4,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { differenceInMinutes, format } from "date-fns";
 import PDFDocument from "pdfkit";
 import { db } from "../db";
-import { timeEntries, customers, invoices, projects } from "../db/schema";
+import { timeEntries, customers, invoices, projects, tasks } from "../db/schema";
 import { auth, registerAuthRoutes } from "./auth";
 import { registerBulkOperations } from "./bulk-operations";
 import { registerNotifications } from "./notifications";
@@ -12,6 +12,8 @@ import { registerAdvancedFeatures } from "./advanced-features";
 import { registerProductivityInsights } from "./productivity-insights";
 import { registerTemplates } from "./templates";
 import { registerProjects } from "./projects";
+import { registerTasks } from "./tasks";
+import { registerAgentRoutes } from "./agent";
 import { registerWorkspaceRoutes, resolveWorkspace, WorkspaceRequest } from "./workspaces";
 import { initializeWebSocket } from "./websocket";
 import {
@@ -43,6 +45,8 @@ export function registerRoutes(app: Express) {
   registerProductivityInsights(app);
   registerTemplates(app);
   registerProjects(app);
+  registerTasks(app);
+  registerAgentRoutes(app);
 
   app.get("/api/customers", auth, resolveWorkspace, async (req, res) => {
     try {
@@ -176,7 +180,15 @@ export function registerRoutes(app: Express) {
     async (req, res) => {
       try {
         const wr = req as WorkspaceRequest;
-        const { isBreak, customerId, projectId, notes } = req.body;
+        const { isBreak, customerId, projectId, taskId, notes, checkIn, checkOut } = req.body as {
+          isBreak: boolean;
+          customerId?: number | null;
+          projectId?: number | null;
+          taskId?: number | null;
+          notes?: string | null;
+          checkIn?: string;
+          checkOut?: string;
+        };
 
         // If projectId given, verify it's in this workspace and derive customer if absent.
         let finalCustomerId: number | null = customerId ?? null;
@@ -194,6 +206,22 @@ export function registerRoutes(app: Express) {
           }
         }
 
+        // If taskId given, verify it belongs to the project and workspace.
+        // We accept agent-supplied projectless task references too — the
+        // task's projectId becomes the entry's projectId in that case.
+        let finalTaskId: number | null = taskId ?? null;
+        if (finalTaskId) {
+          const [t] = await db
+            .select()
+            .from(tasks)
+            .where(and(eq(tasks.id, finalTaskId), eq(tasks.workspaceId, wr.workspace.id)));
+          if (!t) return res.status(400).json({ error: "Task is not in this workspace" });
+          if (finalProjectId && t.projectId !== finalProjectId) {
+            return res.status(400).json({ error: "Task does not belong to that project" });
+          }
+          if (!finalProjectId) finalProjectId = t.projectId;
+        }
+
         const [entry] = await db
           .insert(timeEntries)
           .values({
@@ -201,7 +229,9 @@ export function registerRoutes(app: Express) {
             workspaceId: wr.workspace.id,
             customerId: finalCustomerId,
             projectId: finalProjectId,
-            checkIn: new Date(),
+            taskId: finalTaskId,
+            checkIn: checkIn ? new Date(checkIn) : new Date(),
+            checkOut: checkOut ? new Date(checkOut) : null,
             isBreak,
             notes: notes || null,
             createdAt: new Date(),

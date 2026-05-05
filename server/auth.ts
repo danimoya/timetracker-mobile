@@ -7,24 +7,40 @@ import { users, workspaces, memberships } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { validate, registerSchema, loginSchema } from "./validation";
 import { authLimiter } from "./rate-limit";
+import { verifyApiToken } from "./agent";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
+/**
+ * Express middleware that accepts either a JWT (the existing 7-day session
+ * format) OR a ttm_… bearer API token. The chosen path is transparent to
+ * downstream handlers — both populate req.user with the same shape.
+ */
 export const auth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.header("Authorization");
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "Please authenticate" });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    const user = await db.select().from(users).where(eq(users.id, decoded.id));
+    const raw = authHeader.replace("Bearer ", "").trim();
 
+    // ttm_ tokens take the agent path. Look up via the api_tokens table.
+    if (raw.startsWith("ttm_")) {
+      const result = await verifyApiToken(authHeader);
+      if (!result) return res.status(401).json({ error: "Invalid API token" });
+      // Match the shape jwt path returns ([User]) so downstream handlers
+      // that read wr.user[0] keep working.
+      req.user = [result.user];
+      return next();
+    }
+
+    // Otherwise treat as a JWT.
+    const decoded = jwt.verify(raw, JWT_SECRET) as { id: number };
+    const user = await db.select().from(users).where(eq(users.id, decoded.id));
     if (!user || user.length === 0) {
       return res.status(401).json({ error: "User not found" });
     }
-
     req.user = user;
     next();
   } catch (error) {
